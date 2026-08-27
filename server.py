@@ -32,6 +32,7 @@ import requests
 from fastapi import Depends, FastAPI, File, HTTPException, Request, UploadFile
 from fastapi.responses import FileResponse, JSONResponse
 from mcp.server.fastmcp import FastMCP
+from mcp.server.transport_security import TransportSecuritySettings
 from mcp.types import ToolAnnotations
 from pydantic import Field
 
@@ -49,7 +50,7 @@ if _envf.exists():
 GROQ_KEY = os.environ.get("GROQ_API_KEY", "")
 LLM_KEY = os.environ.get("LLM_API_KEY", "") or GROQ_KEY
 LLM_BASE = os.environ.get("LLM_BASE_URL", "https://api.groq.com/openai/v1")
-LLM_MODEL = os.environ.get("LLM_MODEL", "llama-3.3-70b-versatile")
+LLM_MODEL = os.environ.get("LLM_MODEL", "openai/gpt-oss-20b")
 ASR_BASE = os.environ.get("ASR_BASE_URL", "https://api.groq.com/openai/v1")
 ASR_MODEL = os.environ.get("ASR_MODEL", "whisper-large-v3")
 ASR_LANG = os.environ.get("ASR_LANG", "zh")
@@ -68,6 +69,14 @@ MCP_PATH_SECRET = _explicit_mcp_secret or (
 if MCP_PATH_SECRET and not re.fullmatch(r"[A-Za-z0-9_-]{12,128}", MCP_PATH_SECRET):
     raise RuntimeError("MCP_PATH_SECRET 只能使用 12-128 位字母、数字、下划线或短横线")
 MCP_PATH = "/mcp" + (f"/{MCP_PATH_SECRET}" if MCP_PATH_SECRET else "")
+MCP_ALLOWED_HOSTS = [h.strip() for h in _env(
+    "MCP_ALLOWED_HOSTS",
+    "ears-nianchu.zeabur.app,ears-nianchu.zeabur.app:*,localhost,localhost:*,127.0.0.1,127.0.0.1:*",
+).split(",") if h.strip()]
+MCP_ALLOWED_ORIGINS = [o.strip() for o in _env(
+    "MCP_ALLOWED_ORIGINS",
+    "https://chatgpt.com,https://chat.openai.com,https://ears-nianchu.zeabur.app",
+).split(",") if o.strip()]
 # 情绪标签：为"家里养了个AI"的场景设计，逗号分隔可自定义
 EMOTIONS = [e.strip() for e in _env(
     "EMOTIONS", "开心,兴奋,撒娇,平静,累,低落,委屈,生气,嘴硬,紧张").split(",") if e.strip()]
@@ -97,6 +106,10 @@ mcp = FastMCP(
     streamable_http_path="/",
     stateless_http=True,
     json_response=True,
+    transport_security=TransportSecuritySettings(
+        allowed_hosts=MCP_ALLOWED_HOSTS,
+        allowed_origins=MCP_ALLOWED_ORIGINS,
+    ),
 )
 mcp_http_app = mcp.streamable_http_app()
 
@@ -107,7 +120,7 @@ async def app_lifespan(_: FastAPI):
         yield
 
 
-app = FastAPI(title="ears", version="0.3.1", lifespan=app_lifespan)
+app = FastAPI(title="ears", version="0.3.3", lifespan=app_lifespan)
 app.mount(MCP_PATH, mcp_http_app, name="ears-mcp")
 
 
@@ -512,12 +525,12 @@ def get_ears_status() -> dict[str, Any]:
 
 @app.get("/api/config")
 def public_config():
-    return {"auth_required": bool(ACCESS_TOKEN), "version": "0.3.2"}
+    return {"auth_required": bool(ACCESS_TOKEN), "version": "0.3.3"}
 
 
 @app.get("/healthz")
 def healthz():
-    return {"ok": True, "version": "0.3.2"}
+    return {"ok": True, "version": "0.3.3"}
 
 
 @app.get("/")
