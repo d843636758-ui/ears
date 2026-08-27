@@ -512,12 +512,12 @@ def get_ears_status() -> dict[str, Any]:
 
 @app.get("/api/config")
 def public_config():
-    return {"auth_required": bool(ACCESS_TOKEN), "version": "0.3.1"}
+    return {"auth_required": bool(ACCESS_TOKEN), "version": "0.3.2"}
 
 
 @app.get("/healthz")
 def healthz():
-    return {"ok": True, "version": "0.3.1"}
+    return {"ok": True, "version": "0.3.2"}
 
 
 @app.get("/")

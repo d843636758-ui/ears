@@ -31,6 +31,12 @@ h1 small { display: block; font-size: .68rem; color: var(--sub); font-weight: 40
 @keyframes breathe { 50% { box-shadow: 0 0 0 22px transparent; } }
 #tip { font-size: .78rem; color: var(--sub); min-height: 1.2em; }
 #baseline { font-size: .72rem; color: var(--sub); }
+.mcp-copy {
+  display: none; border: 1px solid var(--main-soft); border-radius: 999px;
+  padding: 8px 14px; color: var(--main); background: var(--card); font: inherit;
+  font-size: .75rem; cursor: pointer;
+}
+.mcp-copy.show { display: block; }
 #out { width: 100%; max-width: 440px; display: flex; flex-direction: column; gap: 12px; }
 .auth {
   width: 100%; max-width: 440px; display: none; gap: 8px; padding: 12px;
@@ -76,6 +82,7 @@ h1 small { display: block; font-size: .68rem; color: var(--sub); font-weight: 40
 <button id="btn">按住说话</button>
 <div id="tip">开口吧，它在认识你</div>
 <div id="baseline"></div>
+<button id="mcpCopy" class="mcp-copy" type="button">复制 ChatGPT MCP 地址</button>
 <div id="out"></div>
 <script>
 const EMOJI = {"开心":"😊","兴奋":"🤩","撒娇":"🥺","平静":"😌","累":"😮‍💨",
@@ -83,7 +90,7 @@ const EMOJI = {"开心":"😊","兴奋":"🤩","撒娇":"🥺","平静":"😌","
 const btn = document.getElementById("btn"), out = document.getElementById("out"),
       tip = document.getElementById("tip"), bl = document.getElementById("baseline"),
       authPanel = document.getElementById("authPanel"), keyInput = document.getElementById("accessKey"),
-      saveKey = document.getElementById("saveKey");
+      saveKey = document.getElementById("saveKey"), mcpCopy = document.getElementById("mcpCopy");
 let mr, chunks = [], stream = null, holding = false, authRequired = false;
 let accessKey = localStorage.getItem("earsAccessKey") || "";
 
@@ -170,11 +177,29 @@ async function loadRecent() {
     const rows = await r.json();
     out.replaceChildren();
     rows.forEach(renderCard);
+    mcpCopy.classList.toggle("show", authRequired && !!accessKey);
     tip.textContent = rows.length ? "耳朵接通了，按住说话吧" : "开口吧，它在认识你";
   } catch (err) {
     authPanel.classList.add("show");
     tip.textContent = err.message || "解锁失败";
   }
+}
+
+async function copyMcpEndpoint() {
+  if (!accessKey) { authPanel.classList.add("show"); tip.textContent = "先输入个人访问钥匙"; return; }
+  const bytes = new TextEncoder().encode(accessKey);
+  const digest = await crypto.subtle.digest("SHA-256", bytes);
+  bytes.fill(0);
+  const secret = Array.from(new Uint8Array(digest), b => b.toString(16).padStart(2, "0")).join("").slice(0, 32);
+  const endpoint = `${location.origin}/mcp/${secret}/`;
+  try {
+    await navigator.clipboard.writeText(endpoint);
+  } catch (_) {
+    const ta = document.createElement("textarea");
+    ta.value = endpoint; document.body.appendChild(ta); ta.select();
+    document.execCommand("copy"); ta.remove();
+  }
+  tip.textContent = "MCP 地址复制好了，去 ChatGPT 插件里粘贴吧";
 }
 
 async function init() {
@@ -239,6 +264,7 @@ saveKey.addEventListener("click", async () => {
   if (!tip.textContent.includes("失败") && !tip.textContent.includes("不对")) authPanel.classList.remove("show");
 });
 keyInput.addEventListener("keydown", e => { if (e.key === "Enter") saveKey.click(); });
+mcpCopy.addEventListener("click", copyMcpEndpoint);
 btn.addEventListener("pointerdown", (e) => { e.preventDefault(); start(); });
 btn.addEventListener("pointerup", stop);
 btn.addEventListener("pointercancel", stop);

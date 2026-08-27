@@ -120,7 +120,7 @@ GROQ_API_KEY=你的Groq密钥
 OWNER_NAME=念初
 ```
 
-容器已默认把数据写入 `/data`。在 Zeabur 上如果没有单独配置 `ACCESS_TOKEN`，服务会自动复用 Zeabur 生成的 `PASSWORD` 作为网页钥匙，并由它派生 MCP 私密路径；原密码不会直接出现在 MCP URL 中。也可以显式设置 `ACCESS_TOKEN` 和 `MCP_PATH_SECRET` 覆盖这套默认值。Zeabur 分配 HTTPS 域名后，打开首页、输入网页钥匙，就能在 iPhone 浏览器里按住录音。
+容器已默认把数据写入 `/data`。在 Zeabur 上如果没有单独配置 `ACCESS_TOKEN`，服务会自动复用 Zeabur 生成的 `PASSWORD` 作为网页钥匙，并由它派生 MCP 私密路径；原密码不会直接出现在 MCP URL 中。也可以显式设置 `ACCESS_TOKEN` 和 `MCP_PATH_SECRET` 覆盖这套默认值。Zeabur 分配 HTTPS 域名后，打开首页、输入网页钥匙，就能在 iPhone 浏览器里按住录音。解锁成功后还会出现“复制 ChatGPT MCP 地址”按钮，私密地址只在浏览器本地派生，不会把钥匙发送给其他服务。
 
 ### 2. 接入 ChatGPT
 
