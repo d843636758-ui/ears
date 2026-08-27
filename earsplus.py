@@ -12,13 +12,15 @@
 """
 import csv
 import json
+import os
 import threading
 from pathlib import Path
 
 import numpy as np
 
 BASE = Path(__file__).resolve().parent
-VOICEPRINT_FILE = BASE / "data" / "voiceprint.json"
+DATA_DIR = Path(os.environ.get("DATA", "") or os.environ.get("SFE_DATA", "") or (BASE / "data"))
+VOICEPRINT_FILE = DATA_DIR / "voiceprint.json"
 YAMNET_ONNX = BASE / "models" / "yamnet.onnx"
 YAMNET_CSV = BASE / "models" / "yamnet_class_map.csv"
 
@@ -71,7 +73,6 @@ def _mfcc_vec(wav_path: str) -> np.ndarray | None:
     return emb / n if n > 0 else None
 
 
-import os
 OWNER = os.environ.get("OWNER_NAME", "") or os.environ.get("SFE_OWNER_NAME", "") or "主人"
 
 

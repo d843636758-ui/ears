@@ -107,6 +107,41 @@ Mac/Linux 把安装 ffmpeg 换成 `brew install ffmpeg` / `sudo apt install ffmp
 
 前8句它在认识你的声音（页面下方有进度）；之后你会开始看到"和平时比：音量偏低、停顿偏高"这样的分析。
 
+## Zeabur 部署 + ChatGPT MCP
+
+这个 fork 同时提供网页录音和 Streamable HTTP MCP。音频只从浏览器传到你自己的 ears 服务；ChatGPT 通过 MCP 读取已经生成的文字与语气结果，不需要从聊天端口上传音频。
+
+### 1. 在 Zeabur 部署
+
+从 GitHub 导入仓库即可，项目内的 `Dockerfile` 会安装 ffmpeg 和 Python 依赖。添加一个挂载到 `/data` 的持久卷，并配置：
+
+```env
+GROQ_API_KEY=你的Groq密钥
+DATA=/data
+ACCESS_TOKEN=至少24位随机字符串
+MCP_PATH_SECRET=至少24位随机字符串
+OWNER_NAME=念初
+```
+
+`ACCESS_TOKEN` 是网页录音与历史接口的钥匙；`MCP_PATH_SECRET` 是 MCP 地址的一部分。两者可以使用同一个只含字母、数字、`_`、`-` 的随机字符串。Zeabur 分配 HTTPS 域名后，打开首页、输入 `ACCESS_TOKEN`，就能在 iPhone 浏览器里按住录音。
+
+### 2. 接入 ChatGPT
+
+在 ChatGPT 网页端开启开发者模式，然后添加远程 MCP：
+
+```text
+https://你的Zeabur域名/mcp/你的MCP_PATH_SECRET/
+```
+
+连接成功后会出现四个只读工具：
+
+- `get_latest_voice`：读取刚刚录下的那一句（最常用）
+- `get_voice_by_id`：按网页卡片上的 12 位编号读取
+- `list_recent_voices`：查看最近几句
+- `get_ears_status`：检查记录数量与个人基线进度
+
+例如在网页说完后，回到聊天里说“先生，听听我刚才说的”，ChatGPT 就能读取转写、语气、相对个人基线和环境声。生产公开发布建议升级为 OAuth；当前私密路径方案面向个人开发者模式使用。
+
 ## 接你自己的AI
 
 每次分析的结果都追加在 `data/moments.jsonl`，一行一条：

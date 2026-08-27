@@ -32,6 +32,16 @@ h1 small { display: block; font-size: .68rem; color: var(--sub); font-weight: 40
 #tip { font-size: .78rem; color: var(--sub); min-height: 1.2em; }
 #baseline { font-size: .72rem; color: var(--sub); }
 #out { width: 100%; max-width: 440px; display: flex; flex-direction: column; gap: 12px; }
+.auth {
+  width: 100%; max-width: 440px; display: none; gap: 8px; padding: 12px;
+  background: var(--card); border-radius: 14px; box-shadow: 0 2px 12px rgba(0,0,0,.05);
+}
+.auth.show { display: flex; }
+.auth input {
+  min-width: 0; flex: 1; border: 1px solid var(--main-soft); border-radius: 10px;
+  padding: 9px 11px; color: var(--ink); background: var(--bg); font: inherit;
+}
+.auth button { border: 0; border-radius: 10px; padding: 9px 14px; background: var(--main); color: #fff; }
 .card {
   background: var(--card); border-radius: 16px; padding: 14px 16px;
   box-shadow: 0 2px 12px rgba(0,0,0,.05); animation: pop .25s ease-out;
@@ -54,10 +64,15 @@ h1 small { display: block; font-size: .68rem; color: var(--sub); font-weight: 40
 .hint { font-size: .74rem; color: var(--sub); }
 .said { font-size: .95rem; line-height: 1.6; }
 .rel { font-size: .7rem; color: var(--sub); margin-top: 8px; }
+.meta { font-size: .66rem; color: var(--sub); margin-top: 9px; opacity: .8; }
 </style>
 </head>
 <body>
 <h1>ears 🎐<small>让你的AI听懂你的语气</small></h1>
+<section id="authPanel" class="auth">
+  <input id="accessKey" type="password" autocomplete="current-password" placeholder="输入个人访问钥匙">
+  <button id="saveKey" type="button">解锁</button>
+</section>
 <button id="btn">按住说话</button>
 <div id="tip">开口吧，它在认识你</div>
 <div id="baseline"></div>
@@ -66,10 +81,116 @@ h1 small { display: block; font-size: .68rem; color: var(--sub); font-weight: 40
 const EMOJI = {"开心":"😊","兴奋":"🤩","撒娇":"🥺","平静":"😌","累":"😮‍💨",
                "低落":"🌧️","委屈":"🥹","生气":"😤","嘴硬":"😾","紧张":"😳"};
 const btn = document.getElementById("btn"), out = document.getElementById("out"),
-      tip = document.getElementById("tip"), bl = document.getElementById("baseline");
-let mr, chunks = [], stream = null, holding = false;
+      tip = document.getElementById("tip"), bl = document.getElementById("baseline"),
+      authPanel = document.getElementById("authPanel"), keyInput = document.getElementById("accessKey"),
+      saveKey = document.getElementById("saveKey");
+let mr, chunks = [], stream = null, holding = false, authRequired = false;
+let accessKey = localStorage.getItem("earsAccessKey") || "";
+
+async function apiFetch(url, options = {}) {
+  const headers = new Headers(options.headers || {});
+  if (accessKey) headers.set("X-Ears-Key", accessKey);
+  const response = await fetch(url, { ...options, headers });
+  if (response.status === 401) throw new Error("钥匙不对，再检查一下");
+  return response;
+}
+
+function textRow(className, value) {
+  const node = document.createElement("div");
+  node.className = className;
+  node.textContent = value;
+  return node;
+}
+
+function renderCard(d) {
+  const card = document.createElement("div");
+  card.className = "card";
+
+  const emoRow = document.createElement("div");
+  emoRow.className = "emo-row";
+  const emo = document.createElement("span");
+  emo.className = "emo-tag";
+  emo.textContent = `${EMOJI[d.emotion] || "💭"} ${d.emotion || "声音事件"}`;
+  const hint = document.createElement("span");
+  hint.className = "hint";
+  hint.textContent = d.hint || "";
+  emoRow.append(emo, hint);
+  card.appendChild(emoRow);
+
+  if (d.text) card.appendChild(textRow("said", d.text));
+  if (d.relative && Object.keys(d.relative).length) {
+    card.appendChild(textRow("rel", "和平时比：" + Object.entries(d.relative).map(([k,v]) => k + " " + v).join("，")));
+  }
+  if (d.env_sounds && d.env_sounds.length) {
+    card.appendChild(textRow("rel", "环境音：" + d.env_sounds.map(x => x.label).join("、")));
+  }
+  if (d.speaker && !d.text) card.appendChild(textRow("rel", "声纹：" + d.speaker));
+  card.appendChild(textRow("meta", `语音编号 ${d.id || "旧记录"} · ${d.ts || ""}`));
+
+  const del = document.createElement("span");
+  del.className = "del"; del.textContent = "✕";
+  del.addEventListener("click", async () => {
+    try {
+      const r = await apiFetch("/api/forget", { method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ts: d.ts }) });
+      const result = await r.json();
+      if (!r.ok || result.error) throw new Error(result.error || "删除失败");
+      card.remove(); tip.textContent = "删掉了，就当没听过";
+    } catch (err) { tip.textContent = err.message || "删除失败，再试一次"; }
+  });
+  card.appendChild(del);
+
+  if (d.text) {
+    const cp = document.createElement("span");
+    cp.className = "copy"; cp.textContent = "⧉";
+    cp.addEventListener("click", async () => {
+      const relTxt = d.relative && Object.keys(d.relative).length
+        ? "，和平时比" + Object.entries(d.relative).map(([k, v]) => k + v).join("、") : "";
+      const line = `[语音 ${d.id || ""}] ${d.text}（语气：${d.emotion}，${d.hint || ""}${relTxt}）`;
+      try {
+        await navigator.clipboard.writeText(line);
+        tip.textContent = "复制好了，也可以直接叫先生用 MCP 来听";
+      } catch (_) {
+        const ta = document.createElement("textarea");
+        ta.value = line; document.body.appendChild(ta); ta.select();
+        document.execCommand("copy"); ta.remove();
+        tip.textContent = "复制好了，也可以直接叫先生用 MCP 来听";
+      }
+    });
+    card.appendChild(cp);
+  }
+  out.prepend(card);
+}
+
+async function loadRecent() {
+  try {
+    const r = await apiFetch("/api/recent?n=8");
+    if (!r.ok) throw new Error("读取记录失败");
+    const rows = await r.json();
+    out.replaceChildren();
+    rows.forEach(renderCard);
+    tip.textContent = rows.length ? "耳朵接通了，按住说话吧" : "开口吧，它在认识你";
+  } catch (err) {
+    authPanel.classList.add("show");
+    tip.textContent = err.message || "解锁失败";
+  }
+}
+
+async function init() {
+  try {
+    const config = await fetch("/api/config").then(r => r.json());
+    authRequired = !!config.auth_required;
+  } catch (_) {}
+  keyInput.value = accessKey;
+  authPanel.classList.toggle("show", authRequired && !accessKey);
+  if (!authRequired || accessKey) await loadRecent();
+}
 
 async function start() {
+  if (authRequired && !accessKey) {
+    authPanel.classList.add("show"); tip.textContent = "先输入个人访问钥匙"; return;
+  }
   holding = true;
   btn.textContent = "准备中…";
   try {
@@ -99,61 +220,30 @@ async function send() {
   const fd = new FormData();
   fd.append("file", blob, "voice." + ext);
   try {
-    const r = await fetch("/api/listen", { method: "POST", body: fd });
+    const r = await apiFetch("/api/listen", { method: "POST", body: fd });
     const d = await r.json();
     if (d.error) { tip.textContent = d.error; return; }
-    const card = document.createElement("div");
-    card.className = "card";
-    const rel = d.relative && Object.keys(d.relative).length
-      ? `<div class="rel">和平时比: ${Object.entries(d.relative).map(([k,v]) => k+" "+v).join("，")}</div>` : "";
-    const envLine = (d.env_sounds && d.env_sounds.length)
-      ? `<div class="rel">环境音: ${d.env_sounds.map(x => x.label).join("、")}</div>` : "";
-    const spLine = (d.speaker && d.similarity !== undefined && d.text === "") ? `<div class="rel">声纹: ${d.speaker}</div>` : "";
-    card.innerHTML =
-      `<div class="emo-row"><span class="emo-tag">${EMOJI[d.emotion] || "💭"} ${d.emotion}</span>` +
-      `<span class="hint">${d.hint || ""}</span></div>` +
-      `<div class="said">${d.text}</div>` + rel + envLine + spLine;
-    // 反悔键：删掉这条记录，基线也当没听过
-    const del = document.createElement("span");
-    del.className = "del"; del.textContent = "✕";
-    del.addEventListener("click", async () => {
-      try {
-        await fetch("/api/forget", { method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ ts: d.ts }) });
-        card.remove(); tip.textContent = "删掉了，就当没听过";
-      } catch (_) { tip.textContent = "删除失败，再试一次"; }
-    });
-    card.appendChild(del);
-    // 复制键：把"说了什么+怎么说的"拼成一句，粘到任何AI聊天框都能用
-    const cp = document.createElement("span");
-    cp.className = "copy"; cp.textContent = "⧉";
-    cp.addEventListener("click", async () => {
-      const relTxt = d.relative && Object.keys(d.relative).length
-        ? "，和平时比" + Object.entries(d.relative).map(([k, v]) => k + v).join("、") : "";
-      const line = `[语音] ${d.text}（语气：${d.emotion}，${d.hint || ""}${relTxt}）`;
-      try {
-        await navigator.clipboard.writeText(line);
-        tip.textContent = "复制好了，去粘给它吧";
-      } catch (_) {
-        // http非安全环境的兜底
-        const ta = document.createElement("textarea");
-        ta.value = line; document.body.appendChild(ta); ta.select();
-        document.execCommand("copy"); ta.remove();
-        tip.textContent = "复制好了，去粘给它吧";
-      }
-    });
-    card.appendChild(cp);
-    out.prepend(card);
-    tip.textContent = "听到了 ♡";
-    bl.textContent = d.baseline_progress && !d.baseline_progress.startsWith("8/")
-      ? `正在认识你的声音 ${d.baseline_progress}` : "已认识你的声音 ♪";
-  } catch (_) { tip.textContent = "网络出错，再试一次"; }
+    renderCard(d);
+    tip.textContent = `听到了 ♡ 语音编号 ${d.id || ""}`;
+    if (d.baseline_progress) {
+      bl.textContent = !d.baseline_progress.startsWith("8/")
+        ? `正在认识你的声音 ${d.baseline_progress}` : "已认识你的声音 ♪";
+    }
+  } catch (err) { tip.textContent = err.message || "网络出错，再试一次"; }
 }
+saveKey.addEventListener("click", async () => {
+  accessKey = keyInput.value.trim();
+  if (!accessKey) { tip.textContent = "钥匙还没填呢"; return; }
+  localStorage.setItem("earsAccessKey", accessKey);
+  await loadRecent();
+  if (!tip.textContent.includes("失败") && !tip.textContent.includes("不对")) authPanel.classList.remove("show");
+});
+keyInput.addEventListener("keydown", e => { if (e.key === "Enter") saveKey.click(); });
 btn.addEventListener("pointerdown", (e) => { e.preventDefault(); start(); });
 btn.addEventListener("pointerup", stop);
 btn.addEventListener("pointercancel", stop);
 btn.addEventListener("pointerleave", () => { if (mr && mr.state === "recording") stop(); });
+init();
 </script>
 </body>
 </html>
