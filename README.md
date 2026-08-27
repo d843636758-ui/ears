@@ -117,13 +117,10 @@ Mac/Linux 把安装 ffmpeg 换成 `brew install ffmpeg` / `sudo apt install ffmp
 
 ```env
 GROQ_API_KEY=你的Groq密钥
-DATA=/data
-ACCESS_TOKEN=至少24位随机字符串
-MCP_PATH_SECRET=至少24位随机字符串
 OWNER_NAME=念初
 ```
 
-`ACCESS_TOKEN` 是网页录音与历史接口的钥匙；`MCP_PATH_SECRET` 是 MCP 地址的一部分。两者可以使用同一个只含字母、数字、`_`、`-` 的随机字符串。Zeabur 分配 HTTPS 域名后，打开首页、输入 `ACCESS_TOKEN`，就能在 iPhone 浏览器里按住录音。
+容器已默认把数据写入 `/data`。在 Zeabur 上如果没有单独配置 `ACCESS_TOKEN`，服务会自动复用 Zeabur 生成的 `PASSWORD` 作为网页钥匙，并由它派生 MCP 私密路径；原密码不会直接出现在 MCP URL 中。也可以显式设置 `ACCESS_TOKEN` 和 `MCP_PATH_SECRET` 覆盖这套默认值。Zeabur 分配 HTTPS 域名后，打开首页、输入网页钥匙，就能在 iPhone 浏览器里按住录音。
 
 ### 2. 接入 ChatGPT
 

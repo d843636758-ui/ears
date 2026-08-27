@@ -13,6 +13,7 @@
 """
 import json
 import hmac
+import hashlib
 import os
 import re
 import statistics
@@ -59,8 +60,11 @@ def _env(name, default=""):
 PROXY = _env("PROXY")  # 例: http://127.0.0.1:7890，云端接口国内直连不通时填
 WEBHOOK = _env("WEBHOOK")  # 分析结果POST到这里，接你自己的AI
 KEEP_AUDIO = os.environ.get("KEEP_AUDIO", "0") == "1"
-ACCESS_TOKEN = _env("ACCESS_TOKEN")
-MCP_PATH_SECRET = _env("MCP_PATH_SECRET", ACCESS_TOKEN)
+ACCESS_TOKEN = _env("ACCESS_TOKEN", _env("PASSWORD"))
+_explicit_mcp_secret = _env("MCP_PATH_SECRET")
+MCP_PATH_SECRET = _explicit_mcp_secret or (
+    hashlib.sha256(ACCESS_TOKEN.encode("utf-8")).hexdigest()[:32] if ACCESS_TOKEN else ""
+)
 if MCP_PATH_SECRET and not re.fullmatch(r"[A-Za-z0-9_-]{12,128}", MCP_PATH_SECRET):
     raise RuntimeError("MCP_PATH_SECRET 只能使用 12-128 位字母、数字、下划线或短横线")
 MCP_PATH = "/mcp" + (f"/{MCP_PATH_SECRET}" if MCP_PATH_SECRET else "")
@@ -103,7 +107,7 @@ async def app_lifespan(_: FastAPI):
         yield
 
 
-app = FastAPI(title="ears", version="0.3.0", lifespan=app_lifespan)
+app = FastAPI(title="ears", version="0.3.1", lifespan=app_lifespan)
 app.mount(MCP_PATH, mcp_http_app, name="ears-mcp")
 
 
@@ -508,12 +512,12 @@ def get_ears_status() -> dict[str, Any]:
 
 @app.get("/api/config")
 def public_config():
-    return {"auth_required": bool(ACCESS_TOKEN), "version": "0.3.0"}
+    return {"auth_required": bool(ACCESS_TOKEN), "version": "0.3.1"}
 
 
 @app.get("/healthz")
 def healthz():
-    return {"ok": True, "version": "0.3.0"}
+    return {"ok": True, "version": "0.3.1"}
 
 
 @app.get("/")
