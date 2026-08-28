@@ -120,7 +120,7 @@ async def app_lifespan(_: FastAPI):
         yield
 
 
-app = FastAPI(title="ears", version="0.3.3", lifespan=app_lifespan)
+app = FastAPI(title="ears", version="0.3.4", lifespan=app_lifespan)
 app.mount(MCP_PATH, mcp_http_app, name="ears-mcp")
 
 
@@ -242,19 +242,61 @@ def judge(text: str, feats: dict, rel: dict) -> dict:
         "只描述状态本身, 不许编造原因或事件。\n"
         '只输出JSON: {"emotion":"...","confidence":0.0到1.0,"hint":"..."}'
     )
-    r = _session.post(
-        f"{LLM_BASE}/chat/completions",
-        headers={"Authorization": f"Bearer {LLM_KEY}", "Content-Type": "application/json"},
-        json={"model": LLM_MODEL, "max_tokens": 200,
-              "messages": [{"role": "user", "content": prompt}]},
-        proxies=_proxies, timeout=30)
-    r.raise_for_status()
-    raw = r.json()["choices"][0]["message"]["content"].strip()
-    s, e = raw.find("{"), raw.rfind("}")
-    out = json.loads(raw[s:e + 1])
-    if out.get("emotion") not in EMOTIONS:
-        out["emotion"] = "平静"
-    return out
+    schema = {
+        "name": "emotion_result",
+        "strict": True,
+        "schema": {
+            "type": "object",
+            "properties": {
+                "emotion": {"type": "string", "enum": EMOTIONS},
+                "confidence": {"type": "number", "minimum": 0, "maximum": 1},
+                "hint": {"type": "string"},
+            },
+            "required": ["emotion", "confidence", "hint"],
+            "additionalProperties": False,
+        },
+    }
+    base_payload = {
+        "model": LLM_MODEL,
+        "max_completion_tokens": 700,
+        "temperature": 0.2,
+        "messages": [{"role": "user", "content": prompt}],
+    }
+    if LLM_MODEL.startswith("openai/gpt-oss-"):
+        # GPT-OSS 默认会把较多预算用于推理；低档推理给最终 JSON 留足 token。
+        base_payload.update({"reasoning_effort": "low", "include_reasoning": False})
+
+    last_error: Exception | None = None
+    # 优先严格 schema；若供应商临时不支持，自动退回兼容性更广的 JSON mode。
+    for response_format in (
+        {"type": "json_schema", "json_schema": schema},
+        {"type": "json_object"},
+    ):
+        try:
+            r = _session.post(
+                f"{LLM_BASE}/chat/completions",
+                headers={"Authorization": f"Bearer {LLM_KEY}", "Content-Type": "application/json"},
+                json={**base_payload, "response_format": response_format},
+                proxies=_proxies, timeout=30)
+            r.raise_for_status()
+            message = r.json()["choices"][0]["message"]
+            raw = message.get("content") or ""
+            if isinstance(raw, list):
+                raw = "".join(str(part.get("text", "")) if isinstance(part, dict) else str(part)
+                              for part in raw)
+            raw = raw.strip()
+            s, e = raw.find("{"), raw.rfind("}")
+            if s < 0 or e < s:
+                raise ValueError("模型未返回 JSON 内容")
+            out = json.loads(raw[s:e + 1])
+            if out.get("emotion") not in EMOTIONS:
+                out["emotion"] = "平静"
+            out["confidence"] = max(0.0, min(1.0, float(out.get("confidence", 0))))
+            out["hint"] = str(out.get("hint", "")).strip()
+            return out
+        except (requests.RequestException, KeyError, TypeError, ValueError, json.JSONDecodeError) as exc:
+            last_error = exc
+    raise RuntimeError("语气模型连续两次没有返回有效 JSON") from last_error
 
 
 def fire_webhook(entry: dict) -> None:
@@ -330,9 +372,9 @@ async def listen(file: UploadFile = File(...)):
     try:
         emo = judge(text, feats, rel)
     except Exception as exc:
-        import traceback
-        traceback.print_exc()
-        emo = {"emotion": "平静", "confidence": 0.0, "hint": f"情绪判断失败: {exc}"}
+        print(f"Emotion judge fallback: {type(exc).__name__}: {exc}", flush=True)
+        emo = {"emotion": "平静", "confidence": 0.0,
+               "hint": "语气模型暂时没给出结果；转写和声学特征已保留"}
     entry = {
         "id": uuid.uuid4().hex[:12],
         "ts": datetime.now(timezone(timedelta(hours=8))).isoformat(timespec="seconds"),
@@ -525,12 +567,12 @@ def get_ears_status() -> dict[str, Any]:
 
 @app.get("/api/config")
 def public_config():
-    return {"auth_required": bool(ACCESS_TOKEN), "version": "0.3.3"}
+    return {"auth_required": bool(ACCESS_TOKEN), "version": "0.3.4"}
 
 
 @app.get("/healthz")
 def healthz():
-    return {"ok": True, "version": "0.3.3"}
+    return {"ok": True, "version": "0.3.4"}
 
 
 @app.get("/")
